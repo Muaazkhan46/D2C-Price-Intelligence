@@ -1,0 +1,351 @@
+{
+  "tables": [
+    {
+      "name": "dim_product",
+      "row_count": 1871,
+      "description": "One row per product variant (the 'who/what'). Tracks 5 D2C skincare/beauty brands: Pilgrim, Foxtale, DermaCo, DotAndKey, Minimalist."
+    },
+    {
+      "name": "fact_price_daily",
+      "row_count": 35943,
+      "description": "One row per product variant per day (the 'when/how much'). Joins to dim_product on variant_id. 22 days of history so far (2026-08-19 to 2026-09-09), growing daily as the scraper runs."
+    }
+  ],
+  "notes": [
+    "DEFAULT RULE: unless a question explicitly asks about test SKUs, freebies, combos, campaigns, or flash sales, all pricing/discount/stockout queries should filter to is_test = 0 AND is_freebie = 0 AND is_combo = 0 AND is_campaign = 0 AND is_flash_sale = 0 -- these aren't normal, steady-state retail prices. When a question IS specifically about one of these (e.g. flash sales), filter TO that flag instead of excluding it, while still excluding the other four.",
+    "This is a star schema: join fact_price_daily to dim_product on variant_id to combine daily price/stock history with product attributes.",
+    "subcategory is only populated when category = 'Skincare' -- NULL for Makeup, Haircare, Bodycare, Accessories, Fragrance, and Other.",
+    "product_type is a separate, messier free-text field from the source site -- 355 of 1,871 rows are null. Don't confuse it with category/subcategory.",
+    "is_test = 1 marks 11 internal/QA SKUs that are not real customer-facing products -- exclude these from real analysis unless specifically asked about test data.",
+    "is_freebie = 1 (309 rows) marks free gift-with-purchase items, often priced at 0 -- not comparable to normal retail prices.",
+    "is_combo = 1 (444 rows) marks bundled multi-product listings -- price is not directly comparable to single-item prices.",
+    "This dataset is live and growing -- snapshot_date range will extend past 2026-09-09 as the daily scraper keeps running. Don't assume the date range is fixed the way RTO's was."
+  ],
+  "columns": [
+    {
+      "name": "dim_product.variant_id",
+      "type": "INTEGER PRIMARY KEY",
+      "description": "Unique ID for one sellable product variant (a specific size/shade/SKU)."
+    },
+    {
+      "name": "dim_product.product_id",
+      "type": "INTEGER",
+      "description": "Groups multiple variants (e.g. different sizes of the same product) under one base product."
+    },
+    {
+      "name": "dim_product.brand",
+      "type": "TEXT",
+      "description": "One of 5 tracked brands: Pilgrim (727 variants), Foxtale (572), DermaCo (261), DotAndKey (207), Minimalist (104)."
+    },
+    {
+      "name": "dim_product.product_title",
+      "type": "TEXT",
+      "description": "The product's name."
+    },
+    {
+      "name": "dim_product.variant_title",
+      "type": "TEXT",
+      "description": "Variant-specific label, e.g. size or shade."
+    },
+    {
+      "name": "dim_product.product_type",
+      "type": "TEXT",
+      "description": "Free-text product type scraped from the source site (e.g. Lipstick, Sunscreen, Combo, Freebie). 355 of 1,871 rows are null. Distinct from category/subcategory, which are our own standardized fields."
+    },
+    {
+      "name": "dim_product.category",
+      "type": "TEXT",
+      "description": "Standardized high-level category. Values: Skincare (842), Makeup (364), Other (289), Haircare (132), Bodycare (120), Accessories (104), Fragrance (20)."
+    },
+    {
+      "name": "dim_product.subcategory",
+      "type": "TEXT",
+      "description": "Standardized subcategory, only populated when category = 'Skincare'. Values include Sunscreen (208), Serum (187), Moisturizer (152), Cleanser (141), Mask (47), Toner (20), LipCare (20), Exfoliant (13). NULL for all non-Skincare categories."
+    },
+    {
+      "name": "dim_product.sku",
+      "type": "TEXT",
+      "description": "Product SKU code from the source site."
+    },
+    {
+      "name": "dim_product.grams",
+      "type": "INTEGER",
+      "description": "Product weight in grams."
+    },
+    {
+      "name": "dim_product.is_freebie",
+      "type": "BOOLEAN",
+      "description": "1 if this is a free gift-with-purchase item, not a normally sold product. 309 of 1,871 rows."
+    },
+    {
+      "name": "dim_product.is_combo",
+      "type": "BOOLEAN",
+      "description": "1 if this is a bundled multi-product listing. 444 of 1,871 rows."
+    },
+    {
+      "name": "dim_product.is_test",
+      "type": "BOOLEAN",
+      "description": "1 if this is an internal/QA test SKU, not a real customer-facing product. Only 11 rows -- exclude from real analysis."
+    },
+    {
+      "name": "dim_product.is_campaign",
+      "type": "BOOLEAN",
+      "description": "1 if this variant is part of a marketing campaign listing. 61 of 1,871 rows."
+    },
+    {
+      "name": "dim_product.is_flash_sale",
+      "type": "BOOLEAN",
+      "description": "1 if this variant is currently part of a flash sale. 96 of 1,871 rows."
+    },
+    {
+      "name": "dim_product.published_at",
+      "type": "TEXT",
+      "description": "When the product was published on the brand's site."
+    },
+    {
+      "name": "dim_product.first_seen",
+      "type": "TEXT",
+      "description": "Date this variant first appeared in the daily scrape -- a proxy for launch date."
+    },
+    {
+      "name": "dim_product.last_seen",
+      "type": "TEXT",
+      "description": "Most recent date this variant was seen in the scrape -- if this stops updating, it's a proxy for delisting."
+    },
+    {
+      "name": "fact_price_daily.variant_id",
+      "type": "INTEGER (FK)",
+      "description": "Links to dim_product.variant_id."
+    },
+    {
+      "name": "fact_price_daily.snapshot_date",
+      "type": "TEXT",
+      "description": "The date of this price observation. Range so far: 2026-08-19 to 2026-09-09 (22 distinct days), growing daily."
+    },
+    {
+      "name": "fact_price_daily.price",
+      "type": "REAL",
+      "description": "Selling price in INR on that date. Range 0 to 25,500, average ~593. Zero prices are mostly freebie items (is_freebie=1)."
+    },
+    {
+      "name": "fact_price_daily.compare_at_price",
+      "type": "REAL",
+      "description": "The 'strikethrough' / original price shown alongside a discount on that date."
+    },
+    {
+      "name": "fact_price_daily.discount_pct",
+      "type": "REAL",
+      "description": "Percentage discount off compare_at_price on that date. Range 0-100, average ~11.2%."
+    },
+    {
+      "name": "fact_price_daily.available",
+      "type": "BOOLEAN",
+      "description": "1 if in stock/purchasable on that date, 0 if out of stock (a stockout). 4,667 of 35,943 rows (~13%) are stockouts -- this is the core signal behind demand inference and lost-revenue estimates."
+    }
+  ],
+  "glossary": [
+    {
+      "term": "stockout",
+      "definition": "A day where available = 0 for a given variant -- the product was listed on the brand's site but not purchasable that day. Used to estimate lost sales and infer demand without real sales data."
+    },
+    {
+      "term": "discount depth",
+      "definition": "How much a product is marked down from its compare_at_price on a given day, captured by discount_pct."
+    },
+    {
+      "term": "price leadership",
+      "definition": "Which brand tends to move (typically lower) its prices first among comparable products, with competitors following -- inferred by comparing price change timing across brands on similar products."
+    },
+    {
+      "term": "star schema",
+      "definition": "dim_product holds one row per product variant (attributes that don't change day to day); fact_price_daily holds one row per variant per day (price/stock that does change). Join on variant_id to combine them."
+    },
+    {
+      "term": "freebie / combo / test SKUs",
+      "definition": "is_freebie, is_combo, and is_test flag products that shouldn't be treated as normal single-item retail prices: freebies are often priced at 0, combos bundle multiple items into one price, and test SKUs (11 rows) aren't real products at all."
+    },
+    {
+      "term": "revenue lost to stockouts (methodology)",
+      "definition": "Estimated as lost_revenue = price_on_that_day * ASSUMED_DAILY_UNITS_SOLD (a stated, adjustable constant, default 1 unit/day/variant -- not a measurement of real demand, since this project has no actual sales/order data, only price and stock-availability history). Results are split into two categories: CHURN (variants that have been in stock at least once and cycle in and out -- the operationally meaningful number, since this reflects a real, fixable stock-management problem) and PERSISTENT (variants never seen in stock across the whole observed history -- likely dead or discontinued stock, reported separately because combining the two overstates the actionable 'lost sales from poor restocking' figure by roughly 2.6x based on the first validation run)."
+    },
+    {
+      "term": "default exclusion rule (methodology)",
+      "definition": "By default, pricing/discount/stockout analysis excludes dim_product rows where is_test=1, is_freebie=1, is_combo=1, is_campaign=1, or is_flash_sale=1. This isn't an arbitrary choice -- checking the data directly showed each of these represents a genuinely different pricing regime, not a cosmetic tag: e.g. campaign products average a 34.4% discount versus 11.0% for everything else. Exception: if a question specifically asks about test SKUs, freebies, combos, campaigns, or flash sales, that specific flag is targeted (included) instead of excluded, while the other four are still excluded."
+    },
+    {
+      "term": "price benchmarking",
+      "definition": "Comparing a brand's average price against competitors selling in the same subcategory -- the core competitive-pricing question. Note that subcategory is only populated for Skincare products in this dataset, so benchmarking is only reliable within skincare lines."
+    },
+    {
+      "term": "opportunity window",
+      "definition": "A period when a competitor is out of stock. From a rival brand's perspective, a competitor's stockout is a chance to capture demand that would otherwise have gone to them -- so 'what is out of stock right now' is an actionable daily question, not just a historical metric."
+    },
+    {
+      "term": "stockout duration / episode",
+      "definition": "A continuous run of consecutive days where a variant shows available = 0, from when it went out of stock to when it came back. Distinct from total stockout days: a product out for 3 separate 2-day episodes has 6 stockout days but an average episode duration of 2 days. Computed in SQL with the gaps-and-islands technique (see the average stockout duration example query). When writing this in SQL, the row-number difference must be computed over the unfiltered rows (two ROW_NUMBERs, one partitioned by variant only and one by variant plus available). Computing one ROW_NUMBER over all rows and filtering to available = 0 afterwards merges all of a product's separate stockouts into a single episode and inflates the result."
+    },
+    {
+      "term": "price volatility",
+      "definition": "How frequently a brand changes its listed prices. Measured by counting day-over-day price differences with LAG(). Highly uneven across brands in this dataset -- some change prices thousands of times in a few weeks, others barely at all."
+    },
+    {
+      "term": "assortment / range",
+      "definition": "The breadth of products a brand offers within a category -- how many distinct variants they list. Used to spot where a competitor concentrates their catalog and where there may be gaps."
+    },
+    {
+      "term": "completed vs ongoing stockout episodes",
+      "definition": "Two valid ways to measure stockout duration, which give different numbers. ALL EPISODES includes stockouts still in progress at the end of the observation window -- a product out for 22 straight days and still unavailable counts as a 22-day episode. This captures current exposure: how long stockouts are lasting right now, including unresolved ones. COMPLETED EPISODES counts only stockouts where the product actually came back in stock, so it measures restock cadence: when products do return, how long did it take. The all-episodes figure is always higher, because long unresolved stockouts inflate it. demand_forecast.py reports the completed-episodes version; a full answer about stockout duration should present both and explain which question each one answers."
+    },
+    {
+      "term": "censoring (left and right) in stockout duration",
+      "definition": "Three ways to measure stockout duration, giving three different numbers. (1) ALL EPISODES counts every spell including ones still ongoing -- captures current exposure but reports unfinished spells as if complete, so durations are understated for those. (2) ENDED-WITHIN-WINDOW requires the spell to have ended, but still includes LEFT-CENSORED spells: a product already out of stock on day 1 of collection, which came back on day 10, is reported as a 10-day spell even though it was actually out for an unknown longer period before tracking began. (3) FULLY OBSERVED requires both the start and the end to be captured, so every reported duration is the true duration -- the statistically honest measure, and the right default, at the cost of a smaller sample. This is the same kind of scoping decision as the RTO project's choice to analyse 30,856 resolvable orders rather than all 129,000: the smaller, cleaner set is what supports a defensible claim."
+    }
+  ],
+  "example_queries": [
+    {
+      "question": "How many product variants are tracked per brand?",
+      "sql": "SELECT brand, COUNT(*) AS n_variants FROM dim_product WHERE is_test = 0 AND is_freebie = 0 AND is_combo = 0 AND is_campaign = 0 AND is_flash_sale = 0 GROUP BY brand ORDER BY n_variants DESC;"
+    },
+    {
+      "question": "Which brand has the highest stockout rate?",
+      "sql": "SELECT p.brand, ROUND(100.0 * SUM(CASE WHEN f.available = 0 THEN 1 ELSE 0 END) / COUNT(*), 2) AS stockout_rate_pct FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0\nGROUP BY p.brand ORDER BY stockout_rate_pct DESC;"
+    },
+    {
+      "question": "What's the average discount by brand on the most recent snapshot?",
+      "sql": "SELECT p.brand, ROUND(AVG(f.discount_pct), 2) AS avg_discount FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0 AND f.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_price_daily) GROUP BY p.brand ORDER BY avg_discount DESC;"
+    },
+    {
+      "question": "What's the average sunscreen price by brand?",
+      "sql": "SELECT p.brand, ROUND(AVG(f.price), 2) AS avg_price FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0 AND p.subcategory = 'Sunscreen' GROUP BY p.brand ORDER BY avg_price;"
+    },
+    {
+      "question": "How many products are currently out of stock, by brand?",
+      "sql": "SELECT p.brand, COUNT(*) AS out_of_stock_count FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0 AND f.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_price_daily) AND f.available = 0 GROUP BY p.brand ORDER BY out_of_stock_count DESC;"
+    },
+    {
+      "question": "Which category has the deepest average discounts?",
+      "sql": "SELECT p.category, ROUND(AVG(f.discount_pct), 2) AS avg_discount FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0\nGROUP BY p.category ORDER BY avg_discount DESC;"
+    },
+    {
+      "question": "What are the 5 highest-priced products currently tracked?",
+      "sql": "SELECT p.brand, p.product_title, f.price FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0 AND f.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_price_daily) ORDER BY f.price DESC LIMIT 5;"
+    },
+    {
+      "question": "How many days of price history do we have so far?",
+      "sql": "SELECT COUNT(DISTINCT snapshot_date) AS n_days, MIN(snapshot_date) AS start_date, MAX(snapshot_date) AS end_date FROM fact_price_daily;"
+    },
+    {
+      "question": "How many combo products does each brand list?",
+      "sql": "SELECT brand, COUNT(*) AS combo_count FROM dim_product WHERE is_combo = 1 GROUP BY brand ORDER BY combo_count DESC;"
+    },
+    {
+      "question": "How many internal test SKUs are in the data?",
+      "sql": "SELECT COUNT(*) FROM dim_product WHERE is_test = 1;",
+      "note": "Returns 11. These should be excluded from real pricing analysis -- they aren't real customer-facing products."
+    },
+    {
+      "question": "Which brand discounts serums the most on average?",
+      "sql": "SELECT p.brand, ROUND(AVG(f.discount_pct), 2) AS avg_discount FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0 AND p.subcategory = 'Serum' GROUP BY p.brand ORDER BY avg_discount DESC;"
+    },
+    {
+      "question": "Which brand runs the deepest flash sale discounts?",
+      "sql": "SELECT p.brand, ROUND(AVG(f.discount_pct), 2) AS avg_flash_discount FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_flash_sale = 1 GROUP BY p.brand ORDER BY avg_flash_discount DESC;",
+      "note": "Flash-sale-specific question -- filters TO is_flash_sale=1 rather than excluding it, per the exception rule."
+    },
+    {
+      "question": "How many products are part of an active marketing campaign, by brand?",
+      "sql": "SELECT brand, COUNT(*) AS campaign_count FROM dim_product WHERE is_test = 0 AND is_freebie = 0 AND is_combo = 0 AND is_campaign = 1 GROUP BY brand ORDER BY campaign_count DESC;",
+      "note": "Campaign-specific question -- filters TO is_campaign=1 rather than excluding it."
+    },
+    {
+      "question": "How many freebie/gift items does each brand list?",
+      "sql": "SELECT brand, COUNT(*) AS freebie_count FROM dim_product WHERE is_freebie = 1 GROUP BY brand ORDER BY freebie_count DESC;",
+      "note": "Freebie-specific question -- filters TO is_freebie=1 rather than excluding it."
+    },
+    {
+      "question": "What is the average stockout duration (in days) by brand?",
+      "sql": "WITH ordered AS (\n  SELECT f.variant_id, p.brand, f.snapshot_date, f.available,\n         ROW_NUMBER() OVER (PARTITION BY f.variant_id ORDER BY f.snapshot_date) AS rn,\n         ROW_NUMBER() OVER (PARTITION BY f.variant_id, f.available ORDER BY f.snapshot_date) AS rn_avail\n  FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\n  WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0\n),\nepisodes AS (\n  SELECT variant_id, brand, available, (rn - rn_avail) AS grp, COUNT(*) AS episode_len\n  FROM ordered WHERE available = 0\n  GROUP BY variant_id, brand, available, (rn - rn_avail)\n)\nSELECT brand, ROUND(AVG(episode_len), 2) AS avg_stockout_days, COUNT(*) AS n_episodes\nFROM episodes GROUP BY brand ORDER BY avg_stockout_days DESC;",
+      "note": "GAPS AND ISLANDS technique -- use this pattern for ANY 'how long did a streak last' question (stockout duration, how long a discount ran, consecutive days at one price). The trick: subtracting two ROW_NUMBERs gives a constant group id for each consecutive run. NOTE: this counts ALL stockout episodes including ones still ongoing at the end of the observation window. demand_forecast.py measures only COMPLETED episodes (where the product came back in stock), so its restock-cadence numbers are lower -- the two deliberately measure different things. CRITICAL REQUIREMENT -- the row numbers MUST be computed so that consecutive out-of-stock days group together. The reliable way is two ROW_NUMBERs over the SAME unfiltered set: one partitioned by variant_id only, one partitioned by variant_id AND available; their difference is constant within a run. COMMON FAILURE: computing a single ROW_NUMBER over ALL rows and then filtering to available = 0 afterwards does NOT work -- with consecutive daily snapshots, (date - row_number) is then constant across the variant's entire series, so every separate stockout for that product silently merges into one giant episode and the reported duration becomes the product's TOTAL days out, not the average spell length. Always verify the episode count looks plausible: if a brand with hundreds of stockout days shows only a handful of episodes, the runs have merged."
+    },
+    {
+      "question": "What is the longest single stockout streak for each brand?",
+      "sql": "WITH ordered AS (\n  SELECT f.variant_id, p.brand, p.product_title, f.snapshot_date, f.available,\n         ROW_NUMBER() OVER (PARTITION BY f.variant_id ORDER BY f.snapshot_date) AS rn,\n         ROW_NUMBER() OVER (PARTITION BY f.variant_id, f.available ORDER BY f.snapshot_date) AS rn_avail\n  FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\n  WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0\n),\nepisodes AS (\n  SELECT variant_id, brand, product_title, (rn - rn_avail) AS grp, COUNT(*) AS episode_len\n  FROM ordered WHERE available = 0\n  GROUP BY variant_id, brand, product_title, (rn - rn_avail)\n)\nSELECT brand, MAX(episode_len) AS longest_stockout_days FROM episodes GROUP BY brand ORDER BY longest_stockout_days DESC;",
+      "note": "Same gaps-and-islands pattern, taking MAX instead of AVG. CRITICAL REQUIREMENT -- the row numbers MUST be computed so that consecutive out-of-stock days group together. The reliable way is two ROW_NUMBERs over the SAME unfiltered set: one partitioned by variant_id only, one partitioned by variant_id AND available; their difference is constant within a run. COMMON FAILURE: computing a single ROW_NUMBER over ALL rows and then filtering to available = 0 afterwards does NOT work -- with consecutive daily snapshots, (date - row_number) is then constant across the variant's entire series, so every separate stockout for that product silently merges into one giant episode and the reported duration becomes the product's TOTAL days out, not the average spell length. Always verify the episode count looks plausible: if a brand with hundreds of stockout days shows only a handful of episodes, the runs have merged."
+    },
+    {
+      "question": "Are stockouts concentrated in discounted products?",
+      "sql": "SELECT p.brand,\n       ROUND(AVG(CASE WHEN f.available = 0 THEN f.discount_pct END), 2) AS avg_discount_when_oos,\n       ROUND(AVG(CASE WHEN f.available = 1 THEN f.discount_pct END), 2) AS avg_discount_when_in_stock,\n       COUNT(*) AS n_rows\nFROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\nWHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0\nGROUP BY p.brand ORDER BY avg_discount_when_oos DESC;",
+      "note": "COMPARISON pattern -- use conditional aggregation (AVG(CASE WHEN cond THEN col END)) to compare a metric across two groups side by side. Applies to any 'is X concentrated in Y' or 'do X products differ from Y products' question."
+    },
+    {
+      "question": "Do higher-priced products go out of stock more often?",
+      "sql": "SELECT p.brand, f.available,\n       ROUND(AVG(f.price), 2) AS avg_price, COUNT(*) AS n_rows\nFROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\nWHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0\nGROUP BY p.brand, f.available ORDER BY p.brand, f.available;",
+      "note": "Comparison of a metric split by a binary condition."
+    },
+    {
+      "question": "How does each brand's average price compare within the same subcategory?",
+      "sql": "SELECT p.subcategory, p.brand, ROUND(AVG(f.price), 2) AS avg_price, COUNT(DISTINCT p.variant_id) AS n_variants\nFROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\nWHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0 AND p.subcategory IS NOT NULL\nGROUP BY p.subcategory, p.brand ORDER BY p.subcategory, avg_price;",
+      "note": "Price benchmarking -- the core competitive question. subcategory is only populated for Skincare, so this only covers skincare lines."
+    },
+    {
+      "question": "Which brand is cheapest in each skincare subcategory?",
+      "sql": "WITH brand_avg AS (\n  SELECT p.subcategory, p.brand, AVG(f.price) AS avg_price\n  FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\n  WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0 AND p.subcategory IS NOT NULL\n  GROUP BY p.subcategory, p.brand\n),\nranked AS (\n  SELECT subcategory, brand, ROUND(avg_price,2) AS avg_price,\n         ROW_NUMBER() OVER (PARTITION BY subcategory ORDER BY avg_price) AS rnk\n  FROM brand_avg\n)\nSELECT subcategory, brand, avg_price FROM ranked WHERE rnk = 1 ORDER BY subcategory;",
+      "note": "RANKING WITHIN GROUPS pattern -- ROW_NUMBER() OVER (PARTITION BY ...) then filter rnk=1. Use for any 'which X is the most/least Y within each Z' question."
+    },
+    {
+      "question": "Which brands change their prices most often?",
+      "sql": "WITH changes AS (\n  SELECT p.brand, f.variant_id, f.snapshot_date, f.price,\n         LAG(f.price) OVER (PARTITION BY f.variant_id ORDER BY f.snapshot_date) AS prev_price\n  FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\n  WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0\n)\nSELECT brand, SUM(CASE WHEN prev_price IS NOT NULL AND price != prev_price THEN 1 ELSE 0 END) AS price_changes,\n       COUNT(DISTINCT variant_id) AS n_variants\nFROM changes GROUP BY brand ORDER BY price_changes DESC;",
+      "note": "DAY-OVER-DAY CHANGE pattern using LAG(). Use for any 'how often does X change' or 'when did X change' question."
+    },
+    {
+      "question": "Which products had the biggest price drops?",
+      "sql": "WITH changes AS (\n  SELECT p.brand, p.product_title, f.snapshot_date, f.price,\n         LAG(f.price) OVER (PARTITION BY f.variant_id ORDER BY f.snapshot_date) AS prev_price\n  FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\n  WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0\n)\nSELECT brand, product_title, snapshot_date, prev_price, price,\n       ROUND(prev_price - price, 2) AS price_drop\nFROM changes WHERE prev_price IS NOT NULL AND price < prev_price\nORDER BY price_drop DESC LIMIT 10;",
+      "note": "LAG() to find specific change events, not just counts."
+    },
+    {
+      "question": "How has the stockout rate changed over time for each brand?",
+      "sql": "SELECT f.snapshot_date, p.brand,\n       ROUND(100.0 * SUM(CASE WHEN f.available = 0 THEN 1 ELSE 0 END) / COUNT(*), 2) AS stockout_rate_pct\nFROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\nWHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0\nGROUP BY f.snapshot_date, p.brand ORDER BY f.snapshot_date, p.brand;",
+      "note": "TIME SERIES pattern -- group by snapshot_date to get a daily trend. Use for any 'how has X changed over time' question."
+    },
+    {
+      "question": "How many products does each brand offer in each skincare subcategory?",
+      "sql": "SELECT subcategory, brand, COUNT(DISTINCT variant_id) AS n_variants\nFROM dim_product WHERE is_test = 0 AND is_freebie = 0 AND is_combo = 0 AND is_campaign = 0 AND is_flash_sale = 0 AND subcategory IS NOT NULL\nGROUP BY subcategory, brand ORDER BY subcategory, n_variants DESC;",
+      "note": "Assortment/range comparison -- shows where each brand concentrates its catalog. Only covers Skincare since subcategory is null elsewhere."
+    },
+    {
+      "question": "Which products launched most recently?",
+      "sql": "SELECT brand, product_title, variant_title, first_seen\nFROM dim_product WHERE is_test = 0 AND is_freebie = 0 AND is_combo = 0 AND is_campaign = 0 AND is_flash_sale = 0\nORDER BY first_seen DESC LIMIT 15;",
+      "note": "first_seen is a proxy for launch date -- when the variant first appeared in the daily scrape."
+    },
+    {
+      "question": "How much estimated revenue exposure comes from stockouts, by brand?",
+      "sql": "SELECT p.brand, COUNT(*) AS oos_days,\n       ROUND(SUM(f.price), 0) AS estimated_lost_revenue\nFROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\nWHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0 AND f.available = 0\nGROUP BY p.brand ORDER BY estimated_lost_revenue DESC;",
+      "note": "Assumes 1 unit/day/variant (see the 'revenue lost to stockouts (methodology)' glossary entry). This is the combined figure -- the full analysis in stockout_revenue.py additionally splits this into churn vs persistent/dead-stock."
+    },
+    {
+      "question": "Which individual products carry the most stockout revenue exposure?",
+      "sql": "SELECT p.brand, p.product_title, COUNT(*) AS oos_days,\n       ROUND(SUM(f.price), 0) AS estimated_lost_revenue\nFROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\nWHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0 AND f.available = 0\nGROUP BY p.variant_id, p.brand, p.product_title\nORDER BY estimated_lost_revenue DESC LIMIT 10;",
+      "note": "Product-level revenue exposure."
+    },
+    {
+      "question": "Which products are responsible for a given brand's stockouts?",
+      "sql": "SELECT p.product_title, p.variant_title, COUNT(*) AS oos_days\nFROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\nWHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0 AND f.available = 0 AND p.brand = 'DermaCo'\nGROUP BY p.variant_id, p.product_title, p.variant_title\nORDER BY oos_days DESC LIMIT 15;",
+      "note": "Substitute the brand name in the WHERE clause for whichever brand is asked about."
+    },
+    {
+      "question": "What is out of stock right now at each brand?",
+      "sql": "SELECT p.brand, COUNT(*) AS currently_out_of_stock\nFROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\nWHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0 AND f.available = 0\n  AND f.snapshot_date = (SELECT MAX(snapshot_date) FROM fact_price_daily)\nGROUP BY p.brand ORDER BY currently_out_of_stock DESC;",
+      "note": "Competitor stockouts are an opportunity window -- this is the 'what can I capitalise on today' question."
+    },
+    {
+      "question": "What is the average COMPLETED stockout duration by brand (only stockouts that ended)?",
+      "sql": "WITH ordered AS (\n  SELECT f.variant_id, p.brand, f.snapshot_date, f.available,\n         ROW_NUMBER() OVER (PARTITION BY f.variant_id ORDER BY f.snapshot_date) AS rn,\n         ROW_NUMBER() OVER (PARTITION BY f.variant_id, f.available ORDER BY f.snapshot_date) AS rn_avail\n  FROM fact_price_daily f JOIN dim_product p ON f.variant_id = p.variant_id\n  WHERE p.is_test = 0 AND p.is_freebie = 0 AND p.is_combo = 0 AND p.is_campaign = 0 AND p.is_flash_sale = 0\n),\nepisodes AS (\n  SELECT variant_id, brand, (rn - rn_avail) AS grp,\n         COUNT(*) AS episode_len, MAX(rn) AS last_rn\n  FROM ordered WHERE available = 0\n  GROUP BY variant_id, brand, (rn - rn_avail)\n),\nvariant_max AS (\n  SELECT variant_id, MAX(rn) AS max_rn FROM ordered GROUP BY variant_id\n)\nSELECT e.brand, ROUND(AVG(e.episode_len), 2) AS avg_completed_stockout_days,\n       COUNT(*) AS n_completed_episodes\nFROM episodes e JOIN variant_max v ON e.variant_id = v.variant_id\nWHERE e.last_rn < v.max_rn\nGROUP BY e.brand ORDER BY avg_completed_stockout_days DESC;",
+      "note": "COMPLETED-episodes variant: excludes stockouts still ongoing at the end of the observation window, by checking that the episode's last row isn't the variant's final observed row. This matches the restock-cadence figure in demand_forecast.py. Contrast with the ALL-episodes query, which includes ongoing stockouts and therefore reports longer durations. Neither is wrong -- they answer different questions, and a complete answer about stockout duration should give both. CRITICAL REQUIREMENT -- the row numbers MUST be computed so that consecutive out-of-stock days group together. The reliable way is two ROW_NUMBERs over the SAME unfiltered set: one partitioned by variant_id only, one partitioned by variant_id AND available; their difference is constant within a run. COMMON FAILURE: computing a single ROW_NUMBER over ALL rows and then filtering to available = 0 afterwards does NOT work -- with consecutive daily snapshots, (date - row_number) is then constant across the variant's entire series, so every separate stockout for that product silently merges into one giant episode and the reported duration becomes the product's TOTAL days out, not the average spell length. Always verify the episode count looks plausible: if a brand with hundreds of stockout days shows only a handful of episodes, the runs have merged."
+    },
+    {
+      "question": "What is the average FULLY OBSERVED stockout duration by brand (spells that both started and ended within the observation window)?",
+      "sql": "WITH oos AS (\n  SELECT f.variant_id, d.brand, f.snapshot_date, f.available,\n         ROW_NUMBER() OVER (PARTITION BY f.variant_id ORDER BY f.snapshot_date) AS rn_all,\n         ROW_NUMBER() OVER (PARTITION BY f.variant_id, f.available ORDER BY f.snapshot_date) AS rn_avail\n  FROM fact_price_daily f JOIN dim_product d ON d.variant_id = f.variant_id\n  WHERE d.is_test = 0 AND d.is_freebie = 0 AND d.is_combo = 0 AND d.is_campaign = 0 AND d.is_flash_sale = 0\n),\nspells AS (\n  SELECT variant_id, brand, (rn_all - rn_avail) AS spell_id,\n         MIN(snapshot_date) AS spell_start, MAX(snapshot_date) AS spell_end,\n         MIN(rn_all) AS first_rn, MAX(rn_all) AS last_rn, COUNT(*) AS days_out\n  FROM oos WHERE available = 0\n  GROUP BY variant_id, brand, (rn_all - rn_avail)\n),\nbounds AS (\n  SELECT variant_id, MIN(rn_all) AS min_rn, MAX(rn_all) AS max_rn FROM oos GROUP BY variant_id\n)\nSELECT s.brand, COUNT(*) AS n_fully_observed_spells,\n       ROUND(AVG(s.days_out), 2) AS avg_stockout_days,\n       MAX(s.days_out) AS longest_spell_days\nFROM spells s JOIN bounds b ON s.variant_id = b.variant_id\nWHERE s.first_rn > b.min_rn   -- started AFTER collection began (not left-censored)\n  AND s.last_rn  < b.max_rn   -- ended BEFORE the latest snapshot (not still ongoing)\nGROUP BY s.brand ORDER BY avg_stockout_days DESC;",
+      "note": "PREFERRED DEFAULT for a plain 'average stockout duration' question. Counts only spells where both the start and the end were captured in the data, so the duration is the true duration. Excludes left-censored spells (already out of stock on the variant's first observed day -- true start unknown) and right-censored spells (still out of stock at the latest snapshot -- true end unknown). When answering a duration question, prefer this, and mention that all-episodes and ended-within-window variants also exist and give different numbers. CRITICAL REQUIREMENT -- the row numbers MUST be computed so that consecutive out-of-stock days group together. The reliable way is two ROW_NUMBERs over the SAME unfiltered set: one partitioned by variant_id only, one partitioned by variant_id AND available; their difference is constant within a run. COMMON FAILURE: computing a single ROW_NUMBER over ALL rows and then filtering to available = 0 afterwards does NOT work -- with consecutive daily snapshots, (date - row_number) is then constant across the variant's entire series, so every separate stockout for that product silently merges into one giant episode and the reported duration becomes the product's TOTAL days out, not the average spell length. Always verify the episode count looks plausible: if a brand with hundreds of stockout days shows only a handful of episodes, the runs have merged."
+    }
+  ]
+}

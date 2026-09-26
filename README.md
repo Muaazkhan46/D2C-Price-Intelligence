@@ -10,6 +10,9 @@ complete; all three planned analyses (stockout revenue, demand/restock
 signals, price leadership) built and run on the full dataset. Numbers
 below are the real script output, not estimates.
 
+**Tech stack:** Python · pandas · SQLite · Windows Task Scheduler ·
+ChromaDB · GLM 4.5 (via OpenRouter) · Streamlit
+
 ---
 
 ## The problem
@@ -551,6 +554,10 @@ no reported number is affected.
 ---
 
 ## Running it
+
+Requires a `brands.csv` in the project root with columns `brand,url` (one
+row per brand, pointing at its Shopify `/products.json` feed) — this file
+is committed in the repo, so a fresh clone already has it.
 
 ```bash
 pip install requests pandas
